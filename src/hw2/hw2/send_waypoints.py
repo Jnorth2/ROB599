@@ -13,7 +13,7 @@ class SendWaypoints(Node):
 
     def __init__(self):
         super().__init__('send_waypoint_node')
-        self.action_client = ActionClient(self, NavGoal, 'nav_goal')
+        self.action_client = ActionClient(self, NavGoal, 'nav_dwa_goal')
         # Wait for the action server to be available
         self.get_logger().info('Waiting for NavGoal action server...')
         self.action_client.wait_for_server()
@@ -25,7 +25,7 @@ class SendWaypoints(Node):
             Point(x=0.0, y=0.0, z=0.0),
             Point(x=4.0, y=0.0, z=0.0),
             Point(x=2.0, y=2.0, z=0.0),
-            Point(x=0.0, y=4.0, z=0.0),
+            Point(x=0.0, y=3.0, z=0.0),
             Point(x=-4.0, y=0.0, z=0.0),
             Point(x=0.0, y=-4.0, z=0.0),
             Point(x=0.0, y=0.0, z=0.0)
