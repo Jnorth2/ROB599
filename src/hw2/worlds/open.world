@@ -46,7 +46,7 @@ pioneer2dx_with_laser
 )
 
 # Add boxes for collision
-box(name "box1" pose [-7.5 -5 0 0 ])
+box(name "box1" pose [3 0 0 0 ])
 box(name "box2" pose [-7 -5 0 0 ])
 box(name "box3" pose [-6.5 -5 0 0 ])
 box(name "box3" pose [-6 -5 0 0 ])

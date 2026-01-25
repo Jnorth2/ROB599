@@ -24,6 +24,12 @@ def generate_launch_description():
     default_value=TextSubstitution(text='open'),
     description='World file relative to the project world file, without .world')
 
+    is_dwa = LaunchConfiguration('is_dwa')
+    is_dwa_arg = DeclareLaunchArgument(
+        'is_dwa',
+        default_value='False',
+        description="True if running DWA controller"
+    )
 
     enforce_prefixes = LaunchConfiguration('enforce_prefixes')
     enforce_prefixes_cmd = DeclareLaunchArgument(
@@ -53,7 +59,7 @@ def generate_launch_description():
     rviz_config = LaunchConfiguration('config')
     rviz_config_arg = DeclareLaunchArgument(
         'config',
-        default_value=TextSubstitution(text='cave'),
+        default_value=TextSubstitution(text='rviz_config'),
         description='Use empty, cave or roblab to load a TUW enviroment')
     
     
@@ -85,6 +91,7 @@ def generate_launch_description():
         use_static_transformations_arg,
         stage_world_configuration_arg,
         rviz_launch_configuration_arg,
+        is_dwa_arg,
         Node(
             package='rviz2',
             namespace=namespace,
@@ -102,5 +109,13 @@ def generate_launch_description():
                         'enforce_prefixes': enforce_prefixes,
                         'use_static_transformations': use_static_transformations,
                 "world_file": [LaunchConfiguration('world_file')]}],
-        )
+        ),
+        # Node(
+        #     package="hw2",
+        #     executable="driver",
+        #     name="driver",
+        #     parameters=[{
+        #         'is_dwa': is_dwa
+        #     }]
+        # )
     ])

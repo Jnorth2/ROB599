@@ -24,10 +24,10 @@ class SendWaypoints(Node):
         self.waypoints = [
             Point(x=0.0, y=0.0, z=0.0),
             Point(x=4.0, y=0.0, z=0.0),
-            Point(x=2.0, y=2.0, z=0.0),
-            Point(x=0.0, y=3.0, z=0.0),
+            Point(x=2.0, y=-2.0, z=0.0),
+            Point(x=0.0, y=-3.0, z=0.0),
             Point(x=-4.0, y=0.0, z=0.0),
-            Point(x=0.0, y=-4.0, z=0.0),
+            Point(x=0.0, y=3.0, z=0.0),
             Point(x=0.0, y=0.0, z=0.0)
         ]
 
@@ -39,7 +39,7 @@ class SendWaypoints(Node):
     def send_waypoint(self):
         while self.point_iter < len(self.waypoints):
             goal_msg = NavGoal.Goal()
-            goal_msg.goal.header.frame_id = "base_link"
+            goal_msg.goal.header.frame_id = "odom"
             goal_msg.goal.header.stamp = self.get_clock().now().to_msg()
             goal_msg.goal.point = self.waypoints[self.point_iter]
             send_waypoint_future = self.action_client.send_goal_async(goal_msg)

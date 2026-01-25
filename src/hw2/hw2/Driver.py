@@ -19,9 +19,11 @@ from nav_msgs.msg import Odometry
 
 import time
 import numpy as np
-from math import atan2, tanh, sqrt, pi, fabs, cos, sin
+from math import atan2, tanh, sqrt, pi, fabs, cos, sin, asin
 
 from rclpy.executors import MultiThreadedExecutor
+
+from visualization_msgs.msg import Marker
 
 
 
@@ -38,8 +40,12 @@ class Driver(Node):
             self.get_logger().info("Running with Simple Controller")
 
         self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+
+        self.marker_pub = self.create_publisher(Marker, "goal_marker", 10)
+
         timer_period = 0.033  # seconds
         # self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.marker_timer = self.create_timer(timer_period, self.marker_cb)
         self.get_goal = ActionServer(
             node=self, 
             action_type=NavGoal, 
@@ -74,35 +80,37 @@ class Driver(Node):
         self.goal = None
         self.distance_to_goal = 0.0
         self.angle_to_goal = 0.0
-        self.distance_threshold = 0.1
+        self.distance_threshold = 0.25
         self.min_distance = np.inf
         self.num_iter = 0
 
         self.target = PointStamped()
         self.target.point.x = 0.0
         self.target.point.y = 0.0
+        self.target_marker = None
 
         #DWA Params
         self.delta_v = 0.02
         self.delta_w = 0.02
         self.dt = 0.1
         self.sampling_res = 0.1
-        self.heading_w = 2.0
+        self.heading_w = 0.16
         self.velocity_w = 0.2
-        self.clearance_w = 0.2
-        self.dist_to_obj_margin = 0.05
-        self.min_obj_dist = 5.0
-        self.pre_step = 20
+        self.clearance_w = 0.12
+        self.dist_to_obj_margin = 0.1
+        self.max_obj_dist = 5.0
+        self.steps = 40
+        self.max_dist_const = 50
 
         #robot params
         self.max_v = 0.5
         self.max_v_dot = 1.0
         self.min_v = 0.0
-        self.max_w_dot = 1.0
-        self.max_w = 0.5
+        self.max_w_dot = 2.0
+        self.max_w = 0.75
         self.v = 0.0
         self.w = 0.0
-        self.robot_r = 0.20
+        self.robot_r = 0.3
         self.location = None
 
         #stupid params
@@ -121,12 +129,42 @@ class Driver(Node):
             self.get_distance_to_goal()
             msg = self.get_twist()
             self.cmd_vel_pub.publish(msg)
+
+    def marker_cb(self):
+        #remove old Markers
+        if not self.goal:
+            if self.target_marker:
+                self.target_marker.action = Marker.DELETE
+                self.marker_pub.publish(self.target_marker)
+                self.target_marker = None
+            return
+        #create marker
+        if not self.target_marker:
+            self.target_marker = Marker()
+            self.target_marker.header.frame_id = self.goal.header.frame_id
+            self.target_marker.id = 0
+        self.target_marker.header.stamp = self.get_clock().now().to_msg()
+        self.target_marker.type = Marker.SPHERE
+        self.target_marker.action = Marker.ADD
+        self.target_marker.pose.position = self.goal.point
+        self.target_marker.scale.x = 0.2
+        self.target_marker.scale.y = 0.2
+        self.target_marker.scale.z = 0.2
+        self.target_marker.color.r = 0.0
+        self.target_marker.color.g = 1.0
+        self.target_marker.color.b = 0.0
+        self.target_marker.color.a = 1.0
+
+        self.marker_pub.publish(self.target_marker)
+
+        self.marker_timer.cancel()
+
     
     def get_twist(self):
         t = self.zero_twist()
 
-        t.linear.x = self.max_v * tanh(self.distance_to_goal)
-        t.angular.z = self.max_v * tanh(5 * self.angle_to_goal)
+        t.linear.x = self.max_v * tanh(1 * self.distance_to_goal)
+        t.angular.z = self.max_v * tanh(10 * self.angle_to_goal)
         return t
     
     def laser_cb(self, scan):
@@ -134,13 +172,13 @@ class Driver(Node):
             if self.close_enough():
                 self.cmd_vel_pub.publish(self.zero_twist())
                 return
-            obstacles = self.get_obstacles(scan)
+            obstacles, min_dist = self.get_obstacles(scan)
             # self.get_logger().info(f"obstacles: {obstacles}")
             self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
             self.get_goal_in_base_link()
             self.get_distance_to_goal()
-            best_pair = self.dwa(obstacles)
-            self.get_logger().info(f"Angle to Goal: {self.angle_to_goal}")
+            best_pair = self.dwa2(obstacles, min_dist)
+            # self.get_logger().info(f"Angle to Goal: {self.angle_to_goal}")
             self.get_logger().info(f"Cmd Twist: {best_pair}")
             msg = self.zero_twist()
             msg.linear.x = best_pair[0]
@@ -244,7 +282,7 @@ class Driver(Node):
             time.sleep(0.03)
 
         self.goal = None
-
+        self.marker_timer.reset()
         t = self.zero_twist()
         self.cmd_vel_pub.publish(t)
         self.last_v = 0.0
@@ -261,10 +299,12 @@ class Driver(Node):
     
     def accept_callback(self, goal_request):
         self.get_logger().info('Received goal request')
+        self.marker_timer.reset()
         return GoalResponse.ACCEPT
     
     def cancel_callback(self, goal_handle):
         self.get_logger().info('Received cancel request')
+        self.marker_timer.reset()
         self.goal = None
         return CancelResponse.ACCEPT
     
@@ -300,6 +340,7 @@ class Driver(Node):
         angle_max = scan.angle_max
         max_range = scan.range_max
         num_readings = len(scan.ranges)
+        min_distance = min(scan.ranges)
         thetas = np.linspace(angle_min, angle_max, num_readings)
         ranges = np.array(scan.ranges)
 
@@ -307,11 +348,11 @@ class Driver(Node):
         y_readings = scan.ranges * np.sin(thetas)
         x_readings = scan.ranges * np.cos(thetas)
 
-        #only keep points close enough
-        max_range = min(max_range, self.min_obj_dist)
+        #only keep points close enough (and eliminate points at the max range of the laser)
+        max_range = min(max_range, self.max_obj_dist)
         indicies = np.where(ranges < max_range - 0.0000001)
 
-        return list(zip(x_readings[indicies], y_readings[indicies]))
+        return list(zip(x_readings[indicies], y_readings[indicies])), min_distance
 
 
     def dwa(self, obstacles):
@@ -344,19 +385,25 @@ class Driver(Node):
         v_score = []
         h_score = []
         o_score = []
+        # self.get_logger().info(f"Possible pairs: {possible_pairs}")
         for pair in possible_pairs:
             #evaluate heading
-            theta = pair["w"] * self.dt 
-            h_score.append(pi-abs(self.angle_to_goal - theta))
-            v_score.append(pair["v"])
+            # theta = pair["w"] * self.dt 
+            # h_score.append(pi-abs(self.angle_to_goal - theta))
+            h_score.append(pair["head"])
+            v_score.append(pair["v"]+ 0.1 * abs(pair["w"])) #
             o_score.append(pair["dist"])
         # self.get_logger().info(f"Heading: {h_score}")
+        # self.get_logger().info(f"Velocity Score: {v_score}")
+        # self.get_logger().info(f"Clearance Score: {o_score}")
         if v_score == []:
             return [0.0, 0.0]
         v_score = self.normalize_score(v_score)
         h_score = self.normalize_score(h_score)
         o_score = self.normalize_score(o_score)
-        # self.get_logger().info(f"Normed: {o_score}")
+        # self.get_logger().info(f"Heading: {h_score}")
+        # self.get_logger().info(f"Velocity Score: {v_score}")
+        # self.get_logger().info(f"Clearance Score: {o_score}")
         checker = []
         for i in range(len(v_score)):
             score = self.heading_w * h_score[i] + self.velocity_w * v_score[i] + self.clearance_w * o_score[i]
@@ -364,7 +411,7 @@ class Driver(Node):
             if score > best_score:
                 best_score = score
                 best_pair = [possible_pairs[i]["v"], possible_pairs[i]["w"]] 
-        # print(f"scores {checker}")
+        print(f"scores {checker}")
         # self.get_logger().info(f"Best Pair: {best_pair}")
         return best_pair
     
@@ -400,7 +447,7 @@ class Driver(Node):
                 # if num_samples == 0:
                 #     num_samples = 1
                 # d_theta = theta_max/num_samples
-                # min_dist = self.min_obj_dist
+                # min_dist = self.max_obj_dist
                 # is_admissable = True
                 # for i in range(num_samples):
                 #     #Calculate the x y of the point
@@ -412,7 +459,7 @@ class Driver(Node):
                 #         point = [(i+1) * d_theta, 0]
                 #     #Check collision With obstacles
                 #     if obstacles == []:
-                #         min_dist = self.min_obj_dist
+                #         min_dist = self.max_obj_dist
                 #     else:
                 #         for obj in obstacles:
                 #             dist = sqrt((point[0] - obj[0]) ** 2 + (point[1] - obj[1]) ** 2)
@@ -424,7 +471,7 @@ class Driver(Node):
                 #                 min_dist = dist
                 
                 #calculate the next n steps
-                min_dist = self.min_obj_dist
+                min_dist = self.max_obj_dist
                 is_admissable = True
                 x = 0
                 y = 0
@@ -444,10 +491,156 @@ class Driver(Node):
                     if not is_admissable:
                         break
                 if is_admissable:
-                    possible_pairs.append({"v": v, "w": w, "dist" : min_dist})
+                    h_score = pi-abs(self.angle_to_goal - theta)
+                    possible_pairs.append({"v": v, "w": w, "dist" : min_dist, "head": h_score})
                 number_checked += 1
         # self.get_logger().info(f"Number of pairs Checked: {number_checked}")
         return possible_pairs
+    
+    def dwa2(self, obstacles, min_dist):
+        #Create Window
+        #Possibly cap max speed with distance to target
+        t = self.get_twist()
+        #only consider a v and w pair (circular trajectory pruning)
+        #dynamic Window Pruning
+        max_v = min(t.linear.x, self.max_v)
+        self.v = self.last_v
+        self.w = self.last_w
+        range_w = self.dt * self.max_w_dot
+        w_interval = [max(self.w - range_w, -1 * self.max_w), min(self.w + range_w, self.max_w)]
+        range_v = self.dt * self.max_v_dot
+        v_interval = [max(self.v - range_v, self.min_v), min(self.v + range_v, max_v)]
+        #Create Paths to Check Admissability
+        pairs = []
+        for w in np.arange(w_interval[0], w_interval[1], self.delta_w):
+            for v in np.arange(v_interval[0], v_interval[1], self.delta_v):
+                x_path = []
+                y_path = []
+                theta_path = []
+                x = 0
+                y = 0
+                theta = 0
+                for i in range(self.steps):
+                    x += v * cos(theta) * self.dt
+                    y += v * sin(theta) * self.dt
+                    theta += w * self.dt
+                    x_path.append(x)
+                    y_path.append(y)
+                    theta_path.append(theta)
+                pairs.append({"v": v, "w": w, "x": x_path, "y": y_path, "theta": theta_path})
+
+        #determine Admissable Paths and score
+        h_score = []
+        v_score = []
+        o_score = []
+        index = []
+        for i, pair in enumerate(pairs):
+            temp_o = self.get_obstacle_score2(pair, obstacles)
+            if temp_o >= 0:
+                o_score.append(temp_o ** 2)
+                index.append(i)
+                temp_h = self.get_heading_score(pair)
+                #incentivise turning if not moving 
+                if self.v == 0:
+                    temp_v = pair["v"] + 0.1 * abs(pair["w"])
+                    self.get_logger().info("No translation")
+                else:
+                    temp_v = pair["v"]
+                # temp_v = pair["v"]
+                h_score.append(temp_h)
+                v_score.append(temp_v)
+        if index == []:
+            self.get_logger().info("No Admissable Paths")
+            return [0.0, 0.0]
+        h_score = self.normalize_score(h_score)
+        v_score = self.normalize_score(v_score)
+        o_score = self.normalize_score(o_score)
+        score = []
+        best_score = -1
+        best_pair = []
+
+        for i in range(len(v_score)):
+            score.append( self.velocity_w * v_score[i] + self.heading_w * h_score[i] + self.clearance_w * o_score[i])
+            if score[-1] > best_score:
+                best_score = score[-1]
+                best_pair = [pairs[index[i]]["v"], pairs[index[i]]["w"]]
+        return best_pair
+
+
+        
+    def get_heading_score(self, pair):
+        angle_to_goal = atan2(self.target.point.y - pair["y"][-1], self.target.point.x - pair["x"][-1])
+        relative_heading = abs(self.bound_angle(angle_to_goal - pair["theta"][-1]))
+        return cos(relative_heading)
+
+            
+    def bound_angle(self, angle):
+        return (angle + pi) % (2 * pi) - pi
+    
+    def get_obstacle_score(self, pair, obstacles):
+        max_score = self.max_obj_dist #max score set to  max object detection distance
+        dist_to_obj = 0.0
+        not_admissable = False
+        for i in range(len(pair["x"])):
+            for obj in obstacles:
+                dist_to_obj = sqrt(((pair["x"][i] - obj[0]) ** 2) + ((pair["y"][i] - obj[1]) ** 2))
+                if dist_to_obj < self.robot_r + self.dist_to_obj_margin:
+                    max_score = -1 #This technically keeps the path which should be discarded
+                    not_admissable = True
+                    break
+                elif dist_to_obj < max_score:
+                    max_score = dist_to_obj
+            if not_admissable:
+                break
+        return max_score
+    
+    def get_obstacle_score2(self, pair, obstacles):
+
+        max_score = self.max_dist_const
+        dist_to_obj = 0.0
+        #find the minimum stopping distance at the current speed
+        min_stoping_dist = pair["v"] ** 2 / 2 / self.max_v_dot
+        #if only turning then return a high score
+        if pair["v"] == 0:
+            return max_score
+        for i in range(len(pair["x"])):
+            for obj in obstacles:
+                dist_to_obj = sqrt(((pair["x"][i] - obj[0]) ** 2) + ((pair["y"][i] - obj[1]) ** 2))
+                #check if we collide
+                if dist_to_obj < self.robot_r + self.dist_to_obj_margin:
+                    #if no turning then driving in a straight line
+                    if pair["w"] == 0:
+                        path_distance = pair["x"][i]
+                        #not admissable if you can't stop
+                        if path_distance < min_stoping_dist + self.dist_to_obj_margin:
+                            return -1
+                        else:
+                            max_score = path_distance
+                            return max_score
+                    #Determine path length and check if stopping distance
+                    else:
+                        r = pair["v"]/pair["w"]
+                        chord = sqrt((pair["x"][i] ** 2) + (pair["y"][i] ** 2))
+                        ratio = chord / (2 * r)
+                        ratio = min(max(ratio, -1.0), 1.0) 
+                        theta = 2 * asin(ratio)
+                        path_distance = r * theta
+                        #not admissable if you can't stop
+                        if path_distance < min_stoping_dist + self.dist_to_obj_margin:
+                            return -1
+                        else:
+                            max_score = path_distance
+                            return max_score
+        return max_score
+
+
+
+           
+
+            
+
+
+
 
 
 
