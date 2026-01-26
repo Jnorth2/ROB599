@@ -1,10 +1,17 @@
+"""
+Driver Node
+ROB599 Mobile Robotics
+Author: Jared Northrop
+Year: 2526
+
+This node implements a simple proportional controller and an implemention of the dynamic window approach 
+(DWA). 
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient, ActionServer, GoalResponse, CancelResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.action.server import ServerGoalHandle
-
-
 
 from geometry_msgs.msg import Twist, PointStamped
 
@@ -24,8 +31,6 @@ from math import atan2, tanh, sqrt, pi, fabs, cos, sin, asin
 from rclpy.executors import MultiThreadedExecutor
 
 from visualization_msgs.msg import Marker
-
-
 
 class Driver(Node):
 
@@ -75,7 +80,6 @@ class Driver(Node):
 		# This sets up a listener for all of the transform types created
         self.transform_listener = TransformListener(self.tf_buffer, self)
 
-
         #Goal Params
         self.goal = None
         self.distance_to_goal = 0.0
@@ -118,9 +122,9 @@ class Driver(Node):
         self.last_w = 0.0
         # self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
 
-
-
     def timer_callback(self):
+        """Not Used
+        """
         msg = Twist()
 
         self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
@@ -158,9 +162,13 @@ class Driver(Node):
         self.marker_pub.publish(self.target_marker)
 
         self.marker_timer.cancel()
-
     
     def get_twist(self):
+        """Find the a twist to move towards the goal with proportional speed. 
+
+        This function uses a tanh function to proporationally control the speed as the robot approaches the 
+        goal. 
+        """
         t = self.zero_twist()
 
         t.linear.x = self.max_v * tanh(1 * self.distance_to_goal)
@@ -177,7 +185,7 @@ class Driver(Node):
             self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
             self.get_goal_in_base_link()
             self.get_distance_to_goal()
-            best_pair = self.dwa2(obstacles, min_dist)
+            best_pair = self.dwa2(obstacles)
             # self.get_logger().info(f"Angle to Goal: {self.angle_to_goal}")
             self.get_logger().info(f"Cmd Twist: {best_pair}")
             msg = self.zero_twist()
@@ -188,9 +196,10 @@ class Driver(Node):
             self.last_w = best_pair[1]
     
     def odom_cb(self, msg):
+        """Not Used
+        """
         self.v = msg.twist.twist.linear.x
         self.w = msg.twist.twist.angular.z
-
 
     def get_goal_in_base_link(self):
         self.target = do_transform_point(self.goal, self.location)
@@ -354,10 +363,13 @@ class Driver(Node):
 
         return list(zip(x_readings[indicies], y_readings[indicies])), min_distance
 
-
     def dwa(self, obstacles):
         """Dynamic Window Approach for obstacle avoidance. 
         This function assumes goals and obstacles are provided in the robots frame. 
+
+        Notes
+        -----
+        This function was the first attempt at DWA and does not function correctly.
         """
         #Possibly cap max speed with distance to target
         t = self.get_twist()
@@ -380,6 +392,11 @@ class Driver(Node):
         return best_pair
 
     def eval_pairs(self, possible_pairs):
+        """Evaluate the possible u, w pairs.
+        Notes
+        -----
+        This function was used in the first attempt at DWA and does not function correctly.
+        """
         best_score = 0
         best_pair = []
         v_score = []
@@ -416,6 +433,18 @@ class Driver(Node):
         return best_pair
     
     def normalize_score(self, values):
+        """Min-max normalization
+
+        Parameters
+        ----------
+        values : list
+            A list of value to normalize
+
+        Returns 
+        -------
+        values : list
+            A list of normalized values on the interval [0, 1]
+        """
         values = np.array(values)
         if values.max() - values.min() == 0:
             values = [0.0 for i in range(len(values))]
@@ -423,8 +452,12 @@ class Driver(Node):
             values = (values - values.min())/(values.max() - values.min())
         return values
 
-
     def admissable_velocities(self, possible_v, possible_w, obstacles):
+        """Determine the Admissable Pairs
+        Notes
+        -----
+        This function was used in the first attempt at DWA and does not function correctly.
+        """
         possible_pairs = []
         number_checked = 0
         for w in np.arange(possible_w[0], possible_w[1], self.delta_w):
@@ -497,7 +530,29 @@ class Driver(Node):
         # self.get_logger().info(f"Number of pairs Checked: {number_checked}")
         return possible_pairs
     
-    def dwa2(self, obstacles, min_dist):
+    def dwa2(self, obstacles):
+        """Dynamic window approach algorithm
+        
+        Parameters
+        ----------
+        obstacles : list
+            A list of tuples containing x, y points for obstacles.
+        
+        Returns
+        -------
+        best_pair : list
+            A list containing the best u and w pair.
+
+        References
+        ----------
+        [1] robot mania, “Dynamic Window Approach Tutorial,” YouTube, Oct. 15, 2020. 
+        https://www.youtube.com/watch?v=tNtUgMBCh2g (accessed Jan. 25, 2026).
+
+        Notes
+        -----
+        Reference [1] was used as a guidline which mainly includes checking paths by determining the next n 
+        steps.
+        """
         #Create Window
         #Possibly cap max speed with distance to target
         t = self.get_twist()
@@ -565,19 +620,51 @@ class Driver(Node):
                 best_score = score[-1]
                 best_pair = [pairs[index[i]]["v"], pairs[index[i]]["w"]]
         return best_pair
-
-
         
     def get_heading_score(self, pair):
+        """Determine the heading 
+        
+        Parameters
+        ----------
+        pair : dictionary
+            A dictionary containing 'x', 'y', and 'theta' paths for the next n steps
+        
+        Returns
+        -------
+        heading_score : float
+            The heading score calculated with the difference between the predicted heading and goal heading.
+        """
         angle_to_goal = atan2(self.target.point.y - pair["y"][-1], self.target.point.x - pair["x"][-1])
         relative_heading = abs(self.bound_angle(angle_to_goal - pair["theta"][-1]))
         return cos(relative_heading)
 
             
     def bound_angle(self, angle):
+        """Returns an angle between [-pi, pi]
+
+        Parameters
+        ----------
+        angle : float
+            An angle in radians. 
+        """
         return (angle + pi) % (2 * pi) - pi
     
     def get_obstacle_score(self, pair, obstacles):
+        """This function evaluates the pairs clearance/obstacle score
+
+        Parameters
+        ----------
+        pair : dictionary
+            A dictionary containing the 'x', 'y', 'theta' paths for the next n steps.
+        obstacles : list
+            A list of tuples containing x, y locations of obstacles. 
+        
+        Returns
+        -------
+        max_score : float
+            The clearance/obstacle score. '-1' means not admissable.
+
+        """
         max_score = self.max_obj_dist #max score set to  max object detection distance
         dist_to_obj = 0.0
         not_admissable = False
@@ -595,7 +682,23 @@ class Driver(Node):
         return max_score
     
     def get_obstacle_score2(self, pair, obstacles):
+        """Determine the clearance/obstacle score.
+        This function first determines whether or not the given pair is admissable then assigns a score based
+        on the path length to collision. Admissability is determined based on the minimum stopping distance 
+        given a constant velocity. 
 
+        Parameters
+        ----------
+        pair : dictionary
+            A dictionary containing 'x', 'y', and 'theta' paths for the next n steps and the 'u' and 'w' pair
+        obstacles : list
+            A list of tuples containing the x, y locations of obstacles. 
+        
+        Returns
+        -------
+        max_score : float
+            The obstacle or clearance score. '-1' means not admissable.
+        """
         max_score = self.max_dist_const
         dist_to_obj = 0.0
         #find the minimum stopping distance at the current speed
@@ -633,35 +736,13 @@ class Driver(Node):
                             return max_score
         return max_score
 
-
-
-           
-
-            
-
-
-
-
-
-
-
 def main(args=None):
     rclpy.init(args=args)
-
     driver_node = Driver()
-
     executor = MultiThreadedExecutor()
     executor.add_node(driver_node)
     executor.spin()
-
-    # rclpy.spin(driver_node)
-
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
-    # driver_node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()

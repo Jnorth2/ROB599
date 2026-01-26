@@ -110,12 +110,12 @@ def generate_launch_description():
                         'use_static_transformations': use_static_transformations,
                 "world_file": [LaunchConfiguration('world_file')]}],
         ),
-        # Node(
-        #     package="hw2",
-        #     executable="driver",
-        #     name="driver",
-        #     parameters=[{
-        #         'is_dwa': is_dwa
-        #     }]
-        # )
+        Node(
+            package="hw2",
+            executable="driver",
+            name="driver",
+            parameters=[{
+                'is_dwa': is_dwa
+            }]
+        )
     ])
