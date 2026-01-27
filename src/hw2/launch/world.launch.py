@@ -27,8 +27,15 @@ def generate_launch_description():
     is_dwa = LaunchConfiguration('is_dwa')
     is_dwa_arg = DeclareLaunchArgument(
         'is_dwa',
-        default_value='False',
+        default_value='True',
         description="True if running DWA controller"
+    )
+
+    use_twist_stamped = LaunchConfiguration('use_twist_stamped')
+    use_twist_stamped_arg = DeclareLaunchArgument(
+        'use_twist_stamped',
+        default_value='False',
+        description="True to use publish twist stamped messages"
     )
 
     enforce_prefixes = LaunchConfiguration('enforce_prefixes')
@@ -92,6 +99,7 @@ def generate_launch_description():
         stage_world_configuration_arg,
         rviz_launch_configuration_arg,
         is_dwa_arg,
+        use_twist_stamped_arg,
         Node(
             package='rviz2',
             namespace=namespace,
@@ -115,7 +123,8 @@ def generate_launch_description():
             executable="driver",
             name="driver",
             parameters=[{
-                'is_dwa': is_dwa
+                'is_dwa': is_dwa,
+                'use_twist_stamped' : use_twist_stamped
             }]
         )
     ])

@@ -31,6 +31,20 @@ class SendWaypoints(Node):
             Point(x=0.0, y=0.0, z=0.0)
         ]
 
+        # self.waypoints = [
+        #     Point(x = 5.0, y=0.0, z= 0.0),
+        #     Point(x = 5.0, y=-4.0, z= 0.0),
+        #     Point(x = 5.0, y=4.0, z= 0.0),
+        #     Point(x = 0.0, y=0.0, z= 0.0),
+        # ]
+
+        #For Real Robot
+        # self.waypoints = [
+        #     Point(x = 3.0, y = 0.0, z = 0.0),
+        #     Point(x = 3.0, y = -0.75, z = 0.0),
+        #     Point(x = 0.0, y = 0.0, z = 0.0)
+        # ]
+
 
         self.point_iter = 0
         self.is_done = True

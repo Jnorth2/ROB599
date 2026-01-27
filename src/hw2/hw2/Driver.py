@@ -13,7 +13,7 @@ from rclpy.action import ActionClient, ActionServer, GoalResponse, CancelRespons
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.action.server import ServerGoalHandle
 
-from geometry_msgs.msg import Twist, PointStamped
+from geometry_msgs.msg import Twist, PointStamped, TwistStamped
 
 from nav_interface.action import NavGoal
 
@@ -32,19 +32,31 @@ from rclpy.executors import MultiThreadedExecutor
 
 from visualization_msgs.msg import Marker
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy
+
 class Driver(Node):
 
     def __init__(self):
         super().__init__('driver')
 
-        self.declare_parameter('is_dwa', False)
+        #set qos for turtle bot
+        qos = QoSProfile(depth=10)
+        qos.reliability = ReliabilityPolicy.BEST_EFFORT
+
+        self.declare_parameter('is_dwa', True)
         self.is_dwa = self.get_parameter('is_dwa').value
         if self.is_dwa:
             self.get_logger().info("Running with DWA Obstacle Avoidance")
         else:
             self.get_logger().info("Running with Simple Controller")
 
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.declare_parameter('use_twist_stamped', False)
+        self.use_twist_stamped = self.get_parameter('use_twist_stamped').value
+
+        if self.use_twist_stamped:
+            self.cmd_vel_pub = self.create_publisher(TwistStamped, 'cmd_vel', 10)
+        else:
+            self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
 
         self.marker_pub = self.create_publisher(Marker, "goal_marker", 10)
 
@@ -70,9 +82,14 @@ class Driver(Node):
             cancel_callback=self.cancel_callback,
             execute_callback=self.waypoint_dwa_callback
         )
+        if self.use_twist_stamped:
+            self.laser_sub = self.create_subscription(LaserScan, 'scan', self.laser_cb, qos)
+            # self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
 
-        self.laser_sub = self.create_subscription(LaserScan, 'base_scan', self.laser_cb, 10)
-        self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
+        else:
+            self.laser_sub = self.create_subscription(LaserScan, 'base_scan', self.laser_cb, 10)
+            self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
+
 
         # Create a buffer to put the transform data in
         self.tf_buffer = Buffer()
@@ -94,23 +111,30 @@ class Driver(Node):
         self.target_marker = None
 
         #DWA Params
-        self.delta_v = 0.02
-        self.delta_w = 0.02
-        self.dt = 0.1
-        self.sampling_res = 0.1
-        self.heading_w = 0.16
-        self.velocity_w = 0.2
-        self.clearance_w = 0.12
-        self.dist_to_obj_margin = 0.1
-        self.max_obj_dist = 5.0
-        self.steps = 40
-        self.max_dist_const = 50
+        #for Simulation Best results were [0.04, 0.04, 0.1, 0.1, 0.16, 0.2 0.12, 0.1, 5.0, 40, 50]
+        #For Real Robot Best Restuls [0.02, 0.02, 0.1, 0.1, 0.16, 0.2, 0.12, 0.1, 5.0, 40, 50]
+        self.delta_v = 0.04 #0.04
+        self.delta_w = 0.04 #0.04
+        self.dt = 0.1 #0.1
+        self.sampling_res = 0.1 #0.1
+        self.heading_w = 0.16 #0.16
+        self.velocity_w = 0.2 #0.2
+        self.clearance_w = 0.12 #0.12
+        self.dist_to_obj_margin = 0.1 #0.1
+        self.max_obj_dist = 5.0 # 5.0
+        self.steps = 40 #40
+        self.max_dist_const = 50 #50
+        self.min_obj_dist = 0.00
+
 
         #robot params
+        #sim [0.5, 1.0, 0.0, 2.0, 0.75, 0.0, 0.0, 0.3]
+        #sim [0.15, 0.5, 0.0, 0.7, 0.2, 0.0, 0.0, 0.2]
+
         self.max_v = 0.5
         self.max_v_dot = 1.0
         self.min_v = 0.0
-        self.max_w_dot = 2.0
+        self.max_w_dot = 02.0
         self.max_w = 0.75
         self.v = 0.0
         self.w = 0.0
@@ -178,7 +202,10 @@ class Driver(Node):
     def laser_cb(self, scan):
         if self.goal and self.is_dwa:
             if self.close_enough():
-                self.cmd_vel_pub.publish(self.zero_twist())
+                if self.use_twist_stamped:
+                    self.cmd_vel_pub.publish(self.zero_twist_stamped())
+                else:
+                    self.cmd_vel_pub.publish(self.zero_twist())
                 return
             obstacles, min_dist = self.get_obstacles(scan)
             # self.get_logger().info(f"obstacles: {obstacles}")
@@ -191,7 +218,15 @@ class Driver(Node):
             msg = self.zero_twist()
             msg.linear.x = best_pair[0]
             msg.angular.z = best_pair[1]
-            self.cmd_vel_pub.publish(msg)
+            if self.use_twist_stamped:
+                msg2 = TwistStamped()
+                msg2.twist = msg
+                msg2.header.frame_id = 'base_link'
+                msg2.header.stamp = self.get_clock().now().to_msg()
+            else:
+                msg2 = msg
+            self.cmd_vel_pub.publish(msg2)
+
             self.last_v = best_pair[0]
             self.last_w = best_pair[1]
     
@@ -282,6 +317,7 @@ class Driver(Node):
         self.get_logger().info(f"Current Position: {self.location.transform.translation}")
 
         msg = Twist()
+        msg2 = TwistStamped()
         while not self.close_enough():
             feedback = NavGoal.Feedback()
             # self.get_logger().info(f"distance to goal : {self.distance_to_goal}")
@@ -292,7 +328,10 @@ class Driver(Node):
 
         self.goal = None
         self.marker_timer.reset()
-        t = self.zero_twist()
+        if self.use_twist_stamped:
+            t = self.zero_twist_stamped()
+        else:
+            t = self.zero_twist()
         self.cmd_vel_pub.publish(t)
         self.last_v = 0.0
         self.last_w = 0.0
@@ -326,7 +365,17 @@ class Driver(Node):
         msg.angular.y = 0.0
         msg.angular.z = 0.0
         return msg
-    
+    def zero_twist_stamped(self):
+        msg = TwistStamped()
+        msg.header.frame_id = 'base_link'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.twist.linear.x = 0.0
+        msg.twist.linear.y = 0.0
+        msg.twist.linear.z = 0.0
+        msg.twist.angular.x = 0.0
+        msg.twist.angular.y = 0.0
+        msg.twist.angular.z = 0.0
+
     def close_enough(self):
         self.get_distance_to_goal()
         if self.distance_to_goal < self.distance_threshold:
@@ -359,7 +408,7 @@ class Driver(Node):
 
         #only keep points close enough (and eliminate points at the max range of the laser)
         max_range = min(max_range, self.max_obj_dist)
-        indicies = np.where(ranges < max_range - 0.0000001)
+        indicies = np.where((ranges < max_range - 0.0000001) & (ranges > self.min_obj_dist))
 
         return list(zip(x_readings[indicies], y_readings[indicies])), min_distance
 

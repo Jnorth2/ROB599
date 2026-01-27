@@ -25,6 +25,8 @@ This package contains a launch file that launches a stage world, rviz, and the d
     - Parameters
         - world : {open, hexagon} 
         - is_dwa : {True, False}
+        - use_twist_stamped : {True, False}
+            - This should be false for sim and True for the real robot.
 - Running the Waypoints Node
     ```bash
     ros2 run hw2 send_waypoint

@@ -17,7 +17,7 @@ setup(
         (os.path.join('share', package_name, 'config/rviz'), glob.glob(os.path.join('config/rviz', '*.rviz'))),
         (os.path.join('share', package_name, 'worlds'), glob.glob(os.path.join('worlds', '*.world'))),
         (os.path.join('share', package_name, 'worlds/include'), glob.glob(os.path.join('worlds/include', '*.inc'))),
-        (os.path.join('share', package_name, 'worlds/bitmaps'), glob.glob(os.path.join('worlds/bitmaps', '*.png'))),
+        (os.path.join('share', package_name, 'worlds/bitmaps'), glob.glob(os.path.join('worlds/bitmaps', '*'))),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
