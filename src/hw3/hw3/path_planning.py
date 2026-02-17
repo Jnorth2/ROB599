@@ -37,6 +37,11 @@ class PathPlanner(Node):
 
     def __init__(self):
         super().__init__('path_planner')
+
+        self.declare_parameter('save_path', False)
+        self.save_path = self.get_parameter('save_path').value
+
+
         self.action_client = ActionClient(self, NavGoal, 'nav_dwa_goal')
         # Wait for the action server to be available
         self.get_logger().info('Waiting for NavGoal action server...')
@@ -144,7 +149,8 @@ class PathPlanner(Node):
         self.get_logger().info(f"Global Point: {point.x}, {point.y}")
         found_path = self.path_planning(point)
         if found_path:
-            self.plan_to_image(self.path)
+            if self.save_path:
+                self.plan_to_image(self.path)
             self.send = True
             response.success = True
             response.message = "Finished Planning"
@@ -205,20 +211,24 @@ class PathPlanner(Node):
 
         #Threshold map
         thresh_map = (self.np_map > 30).astype(np.uint8)
-        self.arr_to_image(thresh_map, "threshold")
 
         #inflate map
         inf_map = self.inflate_map(thresh_map)
-        self.arr_to_image(inf_map, "inflation")
-        self.start_end_image(inf_map, [x_idx, y_idx], [robot_x, robot_y], "Start_End")
-
+        
         #A*
         self.path = self.a_star_search(inf_map, [robot_x, robot_y], [x_idx, y_idx])
+        if self.save_path:
+            self.arr_to_image(thresh_map, "threshold")
+            self.arr_to_image(inf_map, "inflation")
+            self.start_end_image(inf_map, [x_idx, y_idx], [robot_x, robot_y], "Start_End")
+
         if self.path is None:
             return False
         # self.plan_to_image(path)
         self.path_to_waypoints()
-        self.plan_to_image(self.waypoint_path, "waypoint")
+
+        if self.save_path:
+            self.plan_to_image(self.waypoint_path, "waypoint")
 
         return True
     
@@ -454,10 +464,10 @@ class PathPlanner(Node):
         img[unknown_mask] = np.array([255, 255, 0], dtype=np.uint8)
 
         #Goal
-        img[goal[0], goal[1]] = np.array([0, 255, 0], dtype=np.uint8)
+        img[goal[1], goal[0]] = np.array([0, 255, 0], dtype=np.uint8)
 
         #Robot
-        img[robot[0], robot[1]] = np.array([0, 255, 255], dtype=np.uint8)
+        img[robot[1], robot[0]] = np.array([0, 255, 255], dtype=np.uint8)
 
         #Save
         time = self.get_clock().now().to_msg()

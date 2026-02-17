@@ -108,6 +108,15 @@ def generate_launch_description():
 
     )
 
+    planning_node = Node(
+        package="hw3",
+        executable="path_planning",
+        name="path_planning",
+        parameters=[{
+            'save_path', save_map
+        }]
+    )
+
 
     return LaunchDescription([
         stage_world_arg,
@@ -149,4 +158,5 @@ def generate_launch_description():
             }]
         ),
         mapping_node,
+        planning_node,
     ])

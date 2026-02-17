@@ -98,6 +98,9 @@ class Mapping(Node):
 
         self.save_dir = os.path.join(self.pkg_src_path, "data")
         os.makedirs(self.save_dir, exist_ok=True)
+        if self.save_map:
+            self.map_to_occmap()
+            self.occmap_to_image()
 
     def timer_callback(self):
         self.map_to_occmap()
