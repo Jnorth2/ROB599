@@ -22,6 +22,8 @@ import cv2 as cv
 import os
 import time
 
+from pathlib import Path
+
 class Mapping(Node):
 
     def __init__(self):
@@ -62,7 +64,7 @@ class Mapping(Node):
         self.transform_listener = TransformListener(self.tf_buffer, self)
 
         #map Parameters
-        self.cell_size = 0.1 #[m]
+        self.cell_size = 0.05 #[m]
         self.width = 32
         self.height = 32
         self.h_cell = int(self.height/self.cell_size)
@@ -87,9 +89,15 @@ class Mapping(Node):
         self.max_obj_dist = 5.0
         self.min_obj_dist = 0.0
 
-        self.laser_sigma = 0.3
+        self.laser_sigma = 0.1
         # self.location = self.tf_buffer.lookup_transform('odom', 'laser', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
         self.get_logger().info(f"Initial location: {self.location}")
+
+        #Image saving
+        self.pkg_src_path = Path(__file__).resolve().parents[1]
+
+        self.save_dir = os.path.join(self.pkg_src_path, "data")
+        os.makedirs(self.save_dir, exist_ok=True)
 
     def timer_callback(self):
         self.map_to_occmap()
@@ -258,8 +266,7 @@ class Mapping(Node):
         img[unknown_mask] = np.array([255, 255, 0], dtype=np.uint8)
         #Save
         time = self.get_clock().now().to_msg()
-        save_dir = os.path.expanduser("~/college/2025-2026/Winter/ROB599/ROB599/src/hw3/data")
-        cv.imwrite(os.path.join(save_dir, f'map_out_{time.sec}.png'), img)
+        cv.imwrite(os.path.join(self.save_dir, f'map_out_{time.sec}.png'), img)
 
 def main(args=None):
     rclpy.init(args=args)

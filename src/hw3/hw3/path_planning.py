@@ -20,6 +20,7 @@ import cv2 as cv
 import os
 import heapq
 import math
+from pathlib import Path
 
 # Define the Cell class
 class Cell:
@@ -48,15 +49,16 @@ class PathPlanner(Node):
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
-        self.waypoints = [
-            Point(x=0.0, y=0.0, z=0.0),
+        self.global_waypoints = [
             Point(x=4.0, y=0.0, z=0.0),
-            Point(x=2.0, y=-2.0, z=0.0),
-            Point(x=0.0, y=-3.0, z=0.0),
-            Point(x=-4.0, y=0.0, z=0.0),
-            Point(x=0.0, y=3.0, z=0.0),
+            # Point(x=2.0, y=-2.0, z=0.0),
+            # Point(x=0.0, y=-3.0, z=0.0),
+            # Point(x=-4.0, y=0.0, z=0.0),
+            # Point(x=0.0, y=3.0, z=0.0),
             Point(x=0.0, y=0.0, z=0.0)
         ]
+
+        self.waypoints = []
 
         # Create a buffer to put the transform data in
         self.tf_buffer = Buffer()
@@ -64,7 +66,7 @@ class PathPlanner(Node):
 		# This sets up a listener for all of the transform types created
         self.transform_listener = TransformListener(self.tf_buffer, self)
 
-
+        self.global_idx = 0
         self.point_iter = 0
         self.is_done = False
         self.succeed = False
@@ -72,7 +74,7 @@ class PathPlanner(Node):
         self.send = False
 
         #robot Params
-        self.robot_r = 0.2
+        self.robot_r = 0.4
         self.location = None
 
         #map params
@@ -84,26 +86,34 @@ class PathPlanner(Node):
         self.path = None
         self.waypoint_path = None
 
+        #Image saving
+        self.pkg_src_path = Path(__file__).resolve().parents[1]
+
+        self.save_dir = os.path.join(self.pkg_src_path, "data")
+        os.makedirs(self.save_dir, exist_ok=True)
+
     def timer_callback(self):
         if self.send and self.point_iter < len(self.waypoints):
             if not self.sent:
-                self.send_waypoint
+                self.send_waypoint()
             elif self.is_done:
                 self.sent = False
                 self.is_done = False
                 self.point_iter += 1
         elif self.point_iter >= len(self.waypoints):
             self.send = False
+            self.point_iter = 0
 
 
     def send_waypoint(self):
         goal_msg = NavGoal.Goal()
         goal_msg.goal.header.frame_id = "odom"
         goal_msg.goal.header.stamp = self.get_clock().now().to_msg()
+        # self.get_logger().info(f"Index: {self.point_iter}")
         goal_msg.goal.point = self.waypoints[self.point_iter]
         send_waypoint_future = self.action_client.send_goal_async(goal_msg)
         send_waypoint_future.add_done_callback(self.goal_response_callback)
-        self.get_logger().info("sent goal")
+        self.get_logger().info(f"Sent goal: {self.waypoints[self.point_iter].x}, {self.waypoints[self.point_iter].y}")
         self.sent = True
 
     def goal_response_callback(self, future):
@@ -114,7 +124,7 @@ class PathPlanner(Node):
             self.is_done = True
             return
             
-        self.get_logger().info('Goal accepted!')
+        # self.get_logger().info('Goal accepted!')
         
         # Get the result
         result_future = goal_handle.get_result_async()
@@ -123,15 +133,25 @@ class PathPlanner(Node):
     def get_result_callback(self, future):
         result = future.result().result
         status = future.result().status        
+        self.get_logger().info("Finished Action Request")
         self.is_done = True
 
     def plan_path_cb(self, request, response):
-        point = self.waypoints[1]
-        self.path_planning(point)
-        self.plan_to_image(self.path)
-        self.send_waypoint()
-        response.success = True
-        response.message = "Finished Planning"
+        if self.global_idx >= len(self.global_waypoints):
+            self.global_idx = 0
+        point = self.global_waypoints[self.global_idx]
+        self.global_idx += 1
+        self.get_logger().info(f"Global Point: {point.x}, {point.y}")
+        found_path = self.path_planning(point)
+        if found_path:
+            self.plan_to_image(self.path)
+            self.send = True
+            response.success = True
+            response.message = "Finished Planning"
+        else:
+            self.send = False
+            response.success = False
+            response.message = "Failed to find a Path"
         return response
 
 
@@ -172,13 +192,16 @@ class PathPlanner(Node):
 
     def grid_to_transform(self, x_map, y_map):
         x_global = x_map * self.map.info.resolution + self.map.info.origin.position.x
-        y_global = x_map * self.map.info.resolution + self.map.info.origin.position.y
+        y_global = y_map * self.map.info.resolution + self.map.info.origin.position.y
         return x_global, y_global 
     
     def path_planning(self, goal : Point):
 
         #get goal and robot location in grid indexes
         x_idx, y_idx, robot_x, robot_y = self.transform_to_grid(goal.x, goal.y)
+
+        self.get_logger().info(f"Map Coord: {x_idx}, {y_idx} | Robot coord: {robot_x}, {robot_y}")
+        
 
         #Threshold map
         thresh_map = (self.np_map > 30).astype(np.uint8)
@@ -187,15 +210,17 @@ class PathPlanner(Node):
         #inflate map
         inf_map = self.inflate_map(thresh_map)
         self.arr_to_image(inf_map, "inflation")
+        self.start_end_image(inf_map, [x_idx, y_idx], [robot_x, robot_y], "Start_End")
 
         #A*
         self.path = self.a_star_search(inf_map, [robot_x, robot_y], [x_idx, y_idx])
-        
+        if self.path is None:
+            return False
         # self.plan_to_image(path)
         self.path_to_waypoints()
         self.plan_to_image(self.waypoint_path, "waypoint")
 
-        return
+        return True
     
     def inflate_map(self, map):
         cell_padding = math.ceil(self.robot_r/self.map.info.resolution)
@@ -324,7 +349,7 @@ class PathPlanner(Node):
     
     # Trace the path from source to destination
     def trace_path(self, cell_details, dest):
-        print("The Path is ")
+        # print("The Path is ")
         path = []
         row = dest[0]
         col = dest[1]
@@ -341,26 +366,29 @@ class PathPlanner(Node):
         path.append((row, col))
         # Reverse the path to get the path from source to destination
         path.reverse()
-        self.get_logger().info(f"Path is {path}")
+        # self.get_logger().info(f"Path is {path}")
 
         return path
         
     def path_to_waypoints(self):
         self.waypoints = []
         self.waypoint_path = []
-        point = Point()
         for i in range(0, len(self.path)-1 , 5):
-            x, y = self.grid_to_transform(self.path[i][1], self.path[i][0])
+            x, y = self.grid_to_transform(self.path[i][0], self.path[i][1])
+            point = Point()
             point.x = x
-            point.y = y
+            point.y = -y
             self.waypoints.append(point)
             self.waypoint_path.append(self.path[i])
-        x, y = self.grid_to_transform(self.path[-1][1], self.path[-1][0])
+            # self.get_logger().info(f"Waypoint {i}: {x}, {y}")
+        point = Point()
+        x, y = self.grid_to_transform(self.path[-1][0], self.path[-1][1])
         point.x = x
-        point.y = y
+        point.y = -y
         self.waypoints.append(point)
         self.waypoint_path.append(self.path[-1])
-        print(f"Selected waypoints {self.waypoints}")
+        # self.get_logger().info(f"Waypoint end: {x}, {y}")
+        # print(f"Selected waypoints {self.waypoints}")
     
     def plan_to_image(self, path, name = ""):
         #Get map in 2d Array
@@ -388,8 +416,7 @@ class PathPlanner(Node):
 
         #Save
         time = self.get_clock().now().to_msg()
-        save_dir = os.path.expanduser("~/college/2025-2026/Winter/ROB599/ROB599/src/hw3/data")
-        cv.imwrite(os.path.join(save_dir, f'path_out_{name}_{time.sec}.png'), img)
+        cv.imwrite(os.path.join(self.save_dir, f'path_out_{name}_{time.sec}.png'), img)
 
     def arr_to_image(self, map, name=""):
                 #Get map in 2d Array
@@ -409,8 +436,32 @@ class PathPlanner(Node):
 
         #Save
         time = self.get_clock().now().to_msg()
-        save_dir = os.path.expanduser("~/college/2025-2026/Winter/ROB599/ROB599/src/hw3/data")
-        cv.imwrite(os.path.join(save_dir, f'temp_out_{name}_{time.sec}.png'), img)
+        cv.imwrite(os.path.join(self.save_dir, f'temp_out_{name}_{time.sec}.png'), img)
+
+    def start_end_image(self, map, goal, robot, name=""):
+        temp_map = map
+        # temp_map = np.flipud(map)
+        #determine Seen vs unseen
+        unknown_mask = np.array(temp_map < 0)
+        known_mask = ~unknown_mask
+        #Calc Grey Values
+        grey_val = (1.0 - temp_map[known_mask]) * 255.0
+        grey_val = grey_val.astype(np.uint8)
+        #Create Image
+        img = np.zeros((self.map.info.height, self.map.info.width, 3), dtype=np.uint8)
+        img[known_mask] = np.stack([grey_val, grey_val, grey_val], axis=1)
+        #Make unseen cyan
+        img[unknown_mask] = np.array([255, 255, 0], dtype=np.uint8)
+
+        #Goal
+        img[goal[0], goal[1]] = np.array([0, 255, 0], dtype=np.uint8)
+
+        #Robot
+        img[robot[0], robot[1]] = np.array([0, 255, 255], dtype=np.uint8)
+
+        #Save
+        time = self.get_clock().now().to_msg()
+        cv.imwrite(os.path.join(self.save_dir, f'temp_out_{name}_{time.sec}.png'), img)
 
 
 

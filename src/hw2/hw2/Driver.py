@@ -101,7 +101,7 @@ class Driver(Node):
         self.goal = None
         self.distance_to_goal = 0.0
         self.angle_to_goal = 0.0
-        self.distance_threshold = 0.25
+        self.distance_threshold = 0.4
         self.min_distance = np.inf
         self.num_iter = 0
 
@@ -138,7 +138,7 @@ class Driver(Node):
         self.max_w = 0.75
         self.v = 0.0
         self.w = 0.0
-        self.robot_r = 0.3
+        self.robot_r = 0.2
         self.location = None
 
         #stupid params
