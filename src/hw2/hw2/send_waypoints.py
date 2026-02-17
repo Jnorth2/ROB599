@@ -32,6 +32,10 @@ class SendWaypoints(Node):
         ]
 
         # self.waypoints = [
+        #     Point(x = 0.0, y = 2.0, z = 0.0)
+        # ]
+
+        # self.waypoints = [
         #     Point(x = 5.0, y=0.0, z= 0.0),
         #     Point(x = 5.0, y=-4.0, z= 0.0),
         #     Point(x = 5.0, y=4.0, z= 0.0),
