@@ -38,6 +38,12 @@ def generate_launch_description():
         default_value='False',
         description="True to periodically save the map as an image"
     )
+    save_path = LaunchConfiguration('save_path')
+    save_path_arg = DeclareLaunchArgument(
+        'save_path',
+        default_value='False',
+        description="True to save the path"
+    )
 
     use_twist_stamped = LaunchConfiguration('use_twist_stamped')
     use_twist_stamped_arg = DeclareLaunchArgument(
@@ -113,7 +119,7 @@ def generate_launch_description():
         executable="path_planning",
         name="path_planning",
         parameters=[{
-            'save_path': save_map
+            'save_path': save_path
         }]
     )
 
@@ -128,6 +134,7 @@ def generate_launch_description():
         stage_world_configuration_arg,
         rviz_launch_configuration_arg,
         save_map_arg,
+        save_path_arg,
         is_dwa_arg,
         use_twist_stamped_arg,
         Node(

@@ -4,10 +4,10 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from std_msgs.msg import String
-from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
 from nav_msgs.srv import GetMap, GetPlan
 from std_srvs.srv import Trigger
-from geometry_msgs.msg import Twist, TwistStamped, PointStamped, Pose, Transform
+from geometry_msgs.msg import Twist, TwistStamped, PointStamped, Pose, Transform, TransformStamped
 from sensor_msgs.msg import LaserScan
 
 from tf2_ros.transform_listener import TransformListener
@@ -43,6 +43,8 @@ class Mapping(Node):
         if self.use_twist_stamped:
             self.cmd_vel_pub = self.create_publisher(TwistStamped, 'cmd_vel', 10)
             self.laser_sub = self.create_subscription(LaserScan, 'scan', self.laser_cb, qos)
+            # self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
+
 
         else:
             self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
@@ -84,7 +86,7 @@ class Mapping(Node):
         self.map.info.origin.position.y = -16.0
 
         #robot Params
-        self.location = None
+        self.location = TransformStamped()
         self.laser_loc = None
         self.max_obj_dist = 5.0
         self.min_obj_dist = 0.0
@@ -98,6 +100,7 @@ class Mapping(Node):
 
         self.save_dir = os.path.join(self.pkg_src_path, "data")
         os.makedirs(self.save_dir, exist_ok=True)
+
         if self.save_map:
             self.map_to_occmap()
             self.occmap_to_image()
@@ -233,6 +236,20 @@ class Mapping(Node):
         pose.orientation.z = transform.rotation.z
         pose.orientation.w = transform.rotation.w
         return pose
+    
+    def odom_cb(self, msg):
+        """Not Used
+        """
+        # self.get_logger().info(f"Odom message {msg}")
+        # self.get_logger().info(f"Location message {self.location}")
+        self.location.header.stamp = msg.header.stamp
+        self.location.header.frame_id = msg.header.frame_id
+        self.location.child_frame_id = msg.child_frame_id
+        self.location.transform.translation.x = msg.pose.pose.position.x
+        self.location.transform.translation.y = msg.pose.pose.position.y
+        self.location.transform.translation.z = msg.pose.pose.position.z
+        self.location.transform.rotation = msg.pose.pose.orientation
+
     
     def map_to_occmap(self):
         occmap = -np.ones((self.h_cell, self.w_cell), dtype=np.int8)

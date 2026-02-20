@@ -13,7 +13,7 @@ from rclpy.action import ActionClient, ActionServer, GoalResponse, CancelRespons
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.action.server import ServerGoalHandle
 
-from geometry_msgs.msg import Twist, PointStamped, TwistStamped
+from geometry_msgs.msg import Twist, PointStamped, TwistStamped, TransformStamped
 
 from nav_interface.action import NavGoal
 
@@ -49,6 +49,9 @@ class Driver(Node):
             self.get_logger().info("Running with DWA Obstacle Avoidance")
         else:
             self.get_logger().info("Running with Simple Controller")
+            self.timer = self.create_timer(0.1, self.timer_callback)
+            self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
+
 
         self.declare_parameter('use_twist_stamped', False)
         self.use_twist_stamped = self.get_parameter('use_twist_stamped').value
@@ -88,7 +91,7 @@ class Driver(Node):
 
         else:
             self.laser_sub = self.create_subscription(LaserScan, 'base_scan', self.laser_cb, 10)
-            self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
+            # self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
 
 
         # Create a buffer to put the transform data in
@@ -101,7 +104,7 @@ class Driver(Node):
         self.goal = None
         self.distance_to_goal = 0.0
         self.angle_to_goal = 0.0
-        self.distance_threshold = 0.4
+        self.distance_threshold = 0.2
         self.min_distance = np.inf
         self.num_iter = 0
 
@@ -139,7 +142,7 @@ class Driver(Node):
         self.v = 0.0
         self.w = 0.0
         self.robot_r = 0.2
-        self.location = None
+        self.location = TransformStamped()
 
         #stupid params
         self.last_v = 0.0
@@ -149,14 +152,21 @@ class Driver(Node):
     def timer_callback(self):
         """Not Used
         """
-        msg = Twist()
 
-        self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
-        if self.goal:
+        if self.goal and not self.is_dwa:
+            # if not self.use_twist_stamped:
+            #     self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
             self.get_goal_in_base_link()
             self.get_distance_to_goal()
             msg = self.get_twist()
-            self.cmd_vel_pub.publish(msg)
+            if self.use_twist_stamped:
+                msg2 = TwistStamped()
+                msg2.twist = msg
+                msg2.header.frame_id = 'base_link'
+                msg2.header.stamp = self.get_clock().now().to_msg()
+            else:
+                msg2 = msg
+            self.cmd_vel_pub.publish(msg2)
 
     def marker_cb(self):
         #remove old Markers
@@ -209,7 +219,12 @@ class Driver(Node):
                 return
             obstacles, min_dist = self.get_obstacles(scan)
             # self.get_logger().info(f"obstacles: {obstacles}")
-            self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
+            if not self.use_twist_stamped:
+                try:
+                    self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
+                except Exception as e:
+                    self.get_logger().error(f"Transform failed to process: {e}")
+
             self.get_goal_in_base_link()
             self.get_distance_to_goal()
             best_pair = self.dwa2(obstacles)
@@ -233,8 +248,15 @@ class Driver(Node):
     def odom_cb(self, msg):
         """Not Used
         """
-        self.v = msg.twist.twist.linear.x
-        self.w = msg.twist.twist.angular.z
+        # self.get_logger().info(f"Odom message {msg}")
+        # self.get_logger().info(f"Location message {self.location}")
+        self.location.header.stamp = msg.header.stamp
+        self.location.header.frame_id = msg.header.frame_id
+        self.location.child_frame_id = msg.child_frame_id
+        self.location.transform.translation.x = msg.pose.pose.position.x
+        self.location.transform.translation.y = msg.pose.pose.position.y
+        self.location.transform.translation.z = msg.pose.pose.position.z
+        self.location.transform.rotation = msg.pose.pose.orientation
 
     def get_goal_in_base_link(self):
         self.target = do_transform_point(self.goal, self.location)
@@ -260,7 +282,8 @@ class Driver(Node):
         self.goal.header = goal_handle.request.goal.header
         self.goal.point = goal_handle.request.goal.point
         #Create response
-        self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
+        # if not self.use_twist_stamped:
+        #     self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
         self.get_goal_in_base_link()
         self.get_distance_to_goal()
         result = NavGoal.Result()
@@ -272,18 +295,22 @@ class Driver(Node):
 
         msg = Twist()
         while not self.close_enough():
-            self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
-            self.get_goal_in_base_link()
-            self.get_distance_to_goal()
-            msg = self.get_twist()
-            if self.use_twist_stamped:
-                msg2 = TwistStamped()
-                msg2.twist = msg
-                msg2.header.frame_id = 'base_link'
-                msg2.header.stamp = self.get_clock().now().to_msg()
-            else:
-                msg2 = msg
-            self.cmd_vel_pub.publish(msg)
+            self.get_logger().info("In While")
+            # try:
+            #     self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
+            # except Exception:
+            #     self.get_logger().error("Failed to transform")
+            # self.get_goal_in_base_link()
+            # self.get_distance_to_goal()
+            # msg = self.get_twist()
+            # if self.use_twist_stamped:
+            #     msg2 = TwistStamped()
+            #     msg2.twist = msg
+            #     msg2.header.frame_id = 'base_link'
+            #     msg2.header.stamp = self.get_clock().now().to_msg()
+            # else:
+            #     msg2 = msg
+            # self.cmd_vel_pub.publish(msg)
             feedback = NavGoal.Feedback()
             self.get_logger().info(f"distance to goal : {self.distance_to_goal}")
             feedback.distance.data = self.distance_to_goal
@@ -314,7 +341,8 @@ class Driver(Node):
         self.goal.header = goal_handle.request.goal.header
         self.goal.point = goal_handle.request.goal.point
         #Create response
-        self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
+        if not self.use_twist_stamped:
+            self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
         self.get_goal_in_base_link()
         self.get_distance_to_goal()
         result = NavGoal.Result()
