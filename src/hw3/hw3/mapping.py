@@ -36,6 +36,10 @@ class Mapping(Node):
         self.declare_parameter('save_map', False)
         self.save_map = self.get_parameter('save_map').value
 
+        self.declare_parameter('use_odom', False)
+        self.use_odom = self.get_parameter('use_odom').value
+
+        self.get_logger().info(f"use odom: {self.use_odom}")
         #setup pub, sub
         qos = QoSProfile(depth=10)
         qos.reliability = ReliabilityPolicy.BEST_EFFORT
@@ -49,6 +53,9 @@ class Mapping(Node):
         else:
             self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
             self.laser_sub = self.create_subscription(LaserScan, 'base_scan', self.laser_cb, 10)
+
+        if self.use_odom:
+            self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
 
         self.map_pub = self.create_publisher(OccupancyGrid, "map", 10)
 
@@ -151,8 +158,12 @@ class Mapping(Node):
         y_map = ((y_global - self.map.info.origin.position.y) / self.map.info.resolution).astype(int)
 
         # self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
-        robot_x = int((self.laser_loc.transform.translation.x - self.map.info.origin.position.x) / self.map.info.resolution)
-        robot_y = int((self.laser_loc.transform.translation.y - self.map.info.origin.position.y) /self.map.info.resolution)
+        if not self.use_odom:
+            robot_x = int((self.laser_loc.transform.translation.x - self.map.info.origin.position.x) / self.map.info.resolution)
+            robot_y = int((self.laser_loc.transform.translation.y - self.map.info.origin.position.y) /self.map.info.resolution)
+        else:
+            robot_x = int((self.location.transform.translation.x - self.map.info.origin.position.x) / self.map.info.resolution)
+            robot_y = int((self.location.transform.translation.y - self.map.info.origin.position.y) /self.map.info.resolution)
         return x_map, y_map, robot_x, robot_y
 
     def update_map(self, x_map, y_map, robot_x, robot_y, distance):
@@ -187,18 +198,25 @@ class Mapping(Node):
         # if not self.tf_buffer.can_transform('odom', 'laser', stamp, timeout=rclpy.duration.Duration(seconds=0.5)):
         #     self.get_logger().warn(f"Failed to get transform")
         #     return [], []
-
-        try: 
-            self.laser_loc = self.tf_buffer.lookup_transform('odom', 'laser', stamp, timeout=rclpy.duration.Duration(seconds = 1.0))
-        except Exception:
-            self.get_logger().warn(f"Failed to get transform")
-            return -1, -1, 0
-        x_trans = self.laser_loc.transform.translation.x 
-        y_trans = self.laser_loc.transform.translation.y 
-        yaw = atan2(
-            2.0 * (self.laser_loc.transform.rotation.w * self.laser_loc.transform.rotation.z + self.laser_loc.transform.rotation.x * self.laser_loc.transform.rotation.y),
-            1.0 - 2.0 * (self.laser_loc.transform.rotation.y * self.laser_loc.transform.rotation.y + self.laser_loc.transform.rotation.z * self.laser_loc.transform.rotation.z)
-        )
+        if not self.use_odom:
+            try: 
+                self.laser_loc = self.tf_buffer.lookup_transform('odom', 'laser', stamp, timeout=rclpy.duration.Duration(seconds = 1.0))
+            except Exception:
+                self.get_logger().warn(f"Failed to get transform")
+                return -1, -1, 0
+            x_trans = self.laser_loc.transform.translation.x 
+            y_trans = self.laser_loc.transform.translation.y 
+            yaw = atan2(
+                2.0 * (self.laser_loc.transform.rotation.w * self.laser_loc.transform.rotation.z + self.laser_loc.transform.rotation.x * self.laser_loc.transform.rotation.y),
+                1.0 - 2.0 * (self.laser_loc.transform.rotation.y * self.laser_loc.transform.rotation.y + self.laser_loc.transform.rotation.z * self.laser_loc.transform.rotation.z)
+            )
+        else:
+            x_trans = self.location.transform.translation.x 
+            y_trans = self.location.transform.translation.y 
+            yaw = atan2(
+                2.0 * (self.location.transform.rotation.w * self.location.transform.rotation.z + self.location.transform.rotation.x * self.location.transform.rotation.y),
+                1.0 - 2.0 * (self.location.transform.rotation.y * self.location.transform.rotation.y + self.location.transform.rotation.z * self.location.transform.rotation.z)
+            )
         # print(f"Yaw from x axis: {yaw}")
         #Calculate Global Coordinates
         x_global = x_trans + x_local * np.cos(yaw) - y_local * np.sin(yaw)

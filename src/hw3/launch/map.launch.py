@@ -25,6 +25,13 @@ def generate_launch_description():
     default_value=TextSubstitution(text='open'),
     description='World file relative to the project world file, without .world')
 
+    is_sim = LaunchConfiguration('is_sim')
+    is_sim_arg = DeclareLaunchArgument(
+        'is_sim',
+        default_value='True',
+        description="True to launch stage"
+    )
+
     is_dwa = LaunchConfiguration('is_dwa')
     is_dwa_arg = DeclareLaunchArgument(
         'is_dwa',
@@ -50,6 +57,13 @@ def generate_launch_description():
         'use_twist_stamped',
         default_value='False',
         description="True to use publish twist stamped messages"
+    )
+
+    use_odom = LaunchConfiguration('use_odom')
+    use_odom_arg = DeclareLaunchArgument(
+        'use_odom',
+        default_value='False',
+        description="True to use odom topic instead of tf tree"
     )
 
     enforce_prefixes = LaunchConfiguration('enforce_prefixes')
@@ -108,7 +122,8 @@ def generate_launch_description():
         name="mapping",
         parameters=[{
             'use_twist_stamped': use_twist_stamped,
-            'save_map': save_map
+            'save_map': save_map,
+            'use_odom': use_odom
 
         }]
 
@@ -135,6 +150,8 @@ def generate_launch_description():
         rviz_launch_configuration_arg,
         save_map_arg,
         save_path_arg,
+        is_sim_arg,
+        use_odom_arg,
         is_dwa_arg,
         use_twist_stamped_arg,
         Node(
@@ -154,6 +171,7 @@ def generate_launch_description():
                         'enforce_prefixes': enforce_prefixes,
                         'use_static_transformations': use_static_transformations,
                 "world_file": [LaunchConfiguration('world_file')]}],
+            condition=IfCondition(is_sim)
         ),
         Node(
             package="hw2",
@@ -161,7 +179,8 @@ def generate_launch_description():
             name="driver",
             parameters=[{
                 'is_dwa': is_dwa,
-                'use_twist_stamped' : use_twist_stamped
+                'use_twist_stamped' : use_twist_stamped,
+                'use_odom': use_odom
             }]
         ),
         mapping_node,

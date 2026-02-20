@@ -45,11 +45,17 @@ class Driver(Node):
 
         self.declare_parameter('is_dwa', True)
         self.is_dwa = self.get_parameter('is_dwa').value
+
+        self.declare_parameter('use_odom', False)
+        self.use_odom = self.get_parameter('use_odom').value
+
         if self.is_dwa:
             self.get_logger().info("Running with DWA Obstacle Avoidance")
         else:
             self.get_logger().info("Running with Simple Controller")
             self.timer = self.create_timer(0.1, self.timer_callback)
+
+        if self.use_odom:
             self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
 
 
@@ -87,12 +93,9 @@ class Driver(Node):
         )
         if self.use_twist_stamped:
             self.laser_sub = self.create_subscription(LaserScan, 'scan', self.laser_cb, qos)
-            # self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
 
         else:
             self.laser_sub = self.create_subscription(LaserScan, 'base_scan', self.laser_cb, 10)
-            # self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
-
 
         # Create a buffer to put the transform data in
         self.tf_buffer = Buffer()
@@ -154,8 +157,8 @@ class Driver(Node):
         """
 
         if self.goal and not self.is_dwa:
-            # if not self.use_twist_stamped:
-            #     self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
+            if not self.use_odom:
+                self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
             self.get_goal_in_base_link()
             self.get_distance_to_goal()
             msg = self.get_twist()
@@ -219,7 +222,7 @@ class Driver(Node):
                 return
             obstacles, min_dist = self.get_obstacles(scan)
             # self.get_logger().info(f"obstacles: {obstacles}")
-            if not self.use_twist_stamped:
+            if not self.use_odom:
                 try:
                     self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds = 1.0))
                 except Exception as e:
@@ -282,8 +285,8 @@ class Driver(Node):
         self.goal.header = goal_handle.request.goal.header
         self.goal.point = goal_handle.request.goal.point
         #Create response
-        # if not self.use_twist_stamped:
-        #     self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
+        if not self.use_odom:
+            self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
         self.get_goal_in_base_link()
         self.get_distance_to_goal()
         result = NavGoal.Result()
@@ -341,7 +344,7 @@ class Driver(Node):
         self.goal.header = goal_handle.request.goal.header
         self.goal.point = goal_handle.request.goal.point
         #Create response
-        if not self.use_twist_stamped:
+        if not self.use_odom:
             self.location = self.tf_buffer.lookup_transform('odom', 'base_link', rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))
         self.get_goal_in_base_link()
         self.get_distance_to_goal()
