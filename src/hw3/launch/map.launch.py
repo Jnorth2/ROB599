@@ -113,7 +113,7 @@ def generate_launch_description():
         executable="path_planning",
         name="path_planning",
         parameters=[{
-            'save_path', save_map
+            'save_path': save_map
         }]
     )
 

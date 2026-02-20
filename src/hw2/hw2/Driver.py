@@ -276,6 +276,13 @@ class Driver(Node):
             self.get_goal_in_base_link()
             self.get_distance_to_goal()
             msg = self.get_twist()
+            if self.use_twist_stamped:
+                msg2 = TwistStamped()
+                msg2.twist = msg
+                msg2.header.frame_id = 'base_link'
+                msg2.header.stamp = self.get_clock().now().to_msg()
+            else:
+                msg2 = msg
             self.cmd_vel_pub.publish(msg)
             feedback = NavGoal.Feedback()
             self.get_logger().info(f"distance to goal : {self.distance_to_goal}")
@@ -285,8 +292,10 @@ class Driver(Node):
             time.sleep(0.03)
 
         self.goal = None
-
-        t = self.zero_twist()
+        if self.use_twist_stamped:
+            t = self.zero_twist_stamped()
+        else:
+            t = self.zero_twist()
         self.cmd_vel_pub.publish(t)
 
         self.get_logger().info(f"Completed goal")
@@ -375,6 +384,7 @@ class Driver(Node):
         msg.twist.angular.x = 0.0
         msg.twist.angular.y = 0.0
         msg.twist.angular.z = 0.0
+        return msg
 
     def close_enough(self):
         self.get_distance_to_goal()

@@ -40,7 +40,7 @@ class PathPlanner(Node):
 
         self.declare_parameter('save_path', False)
         self.save_path = self.get_parameter('save_path').value
-
+        self.get_logger().info(f"Save Path {self.save_path}")
 
         self.action_client = ActionClient(self, NavGoal, 'nav_dwa_goal')
         # Wait for the action server to be available
