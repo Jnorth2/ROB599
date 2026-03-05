@@ -74,8 +74,8 @@ class Mapping(Node):
 
         #map Parameters
         self.cell_size = 0.05 #[m]
-        self.width = 32
-        self.height = 32
+        self.width = 18
+        self.height = 18
         self.h_cell = int(self.height/self.cell_size)
         self.w_cell = int(self.width/self.cell_size)
         self.detail_map = -np.ones((self.h_cell, self.w_cell))
@@ -89,8 +89,8 @@ class Mapping(Node):
         self.map.info.width = self.w_cell
         self.map.info.height = self.h_cell
         self.map.info.origin = Pose()
-        self.map.info.origin.position.x = -16.0
-        self.map.info.origin.position.y = -16.0
+        self.map.info.origin.position.x = -9.0
+        self.map.info.origin.position.y = -9.0
 
         #robot Params
         self.location = TransformStamped()

@@ -13,6 +13,7 @@ from launch_ros.actions import Node
 
 
 
+
 def generate_launch_description():
 
     use_sim_time = LaunchConfiguration('use_sim_time',  default='true')
@@ -23,6 +24,7 @@ def generate_launch_description():
     )
     hw2_directory = get_package_share_directory('hw2')
     hw3_directory = get_package_share_directory('hw3')
+    hw4_directory = get_package_share_directory('hw4_jn')
     # launch_dir = os.path.join(this_directory, 'launch')
 
     stage_world_arg = DeclareLaunchArgument(
@@ -99,7 +101,7 @@ def generate_launch_description():
     rviz_config = LaunchConfiguration('config')
     rviz_config_arg = DeclareLaunchArgument(
         'config',
-        default_value=TextSubstitution(text='rviz_config'),
+        default_value=TextSubstitution(text='hw4_rviz'),
         description='Use empty, cave or roblab to load a TUW enviroment')
     
     
@@ -114,7 +116,7 @@ def generate_launch_description():
 
     def rviz_launch_configuration(context):
         file = os.path.join(
-            hw3_directory,
+            hw4_directory,
             'config',
             context.launch_configurations['config'] + '.rviz')
         return [SetLaunchConfiguration('config', file)]
@@ -143,6 +145,41 @@ def generate_launch_description():
         }]
     )
 
+    map_node = Node(
+        package="nav2_map_server",
+        executable="map_server",
+        name="map_server",
+        parameters=[{
+            'yaml_filename': os.path.join(hw4_directory, 'config', 'map.yaml')
+        }]
+    )
+
+
+    lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'autostart': True,
+            'node_names': ['map_server']
+        }]
+    )
+
+    map_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        arguments=["0","0","0","0","0","0","map","odom"]
+    )
+
+    localization_node = Node(
+        package="hw4_jn",
+        executable="localization",
+        name="localization",
+        output="screen",
+    )
+
 
     return LaunchDescription([
         stage_world_arg,
@@ -159,15 +196,7 @@ def generate_launch_description():
         use_odom_arg,
         is_dwa_arg,
         use_twist_stamped_arg,
-        Node(
-            package='rviz2',
-            namespace=namespace,
-            executable='rviz2',
-            name='rviz2',
-            arguments=['-d', [rviz_config]],
-            parameters=[{
-                "use_sim_time": use_sim_time}],
-        ),
+        
         Node(
             package='stage_ros2',
             executable='stage_ros2',
@@ -189,5 +218,18 @@ def generate_launch_description():
             }]
         ),
         mapping_node,
-        planning_node,
+        localization_node,
+        # lifecycle_manager,
+        # map_node,
+        # map_tf,
+        Node(
+            package='rviz2',
+            namespace=namespace,
+            executable='rviz2',
+            name='rviz2',
+            arguments=['-d', [rviz_config]],
+            parameters=[{
+                "use_sim_time": use_sim_time}],
+        ),
+
     ])

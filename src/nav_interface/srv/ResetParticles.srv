@@ -1,0 +1,7 @@
+#Service Call
+bool use_pose
+geometry_msgs/Pose pose
+---
+# Result
+bool success
+string msg

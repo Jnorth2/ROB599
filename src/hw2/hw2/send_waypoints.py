@@ -25,13 +25,14 @@ class SendWaypoints(Node):
             Point(x=0.0, y=0.0, z=0.0),
             Point(x=4.0, y=0.0, z=0.0),
             Point(x=2.0, y=-2.0, z=0.0),
-            Point(x=0.0, y=-3.0, z=0.0),
+            Point(x=1.0, y=-3.0, z=0.0),
             Point(x=-4.0, y=0.0, z=0.0),
-            Point(x=0.0, y=3.0, z=0.0),
+            Point(x=0.0, y=2.0, z=0.0),
             Point(x=0.0, y=0.0, z=0.0)
         ]
 
         # self.waypoints = [
+        #     Point(x=0.0, y=0.0, z=0.0),
         #     Point(x = 0.0, y = 2.0, z = 0.0)
         # ]
 
