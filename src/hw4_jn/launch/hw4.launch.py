@@ -62,8 +62,15 @@ def generate_launch_description():
     use_twist_stamped = LaunchConfiguration('use_twist_stamped')
     use_twist_stamped_arg = DeclareLaunchArgument(
         'use_twist_stamped',
-        default_value='False',
+        default_value='True',
         description="True to use publish twist stamped messages"
+    )
+
+    use_fake_hardware = LaunchConfiguration('use_fake_hardware')
+    use_fake_hardware_arg = DeclareLaunchArgument(
+        'use_fake_hardware',
+        default_value="True",
+        description="True to use stage ros2 topics"
     )
 
     use_odom = LaunchConfiguration('use_odom')
@@ -130,7 +137,8 @@ def generate_launch_description():
         parameters=[{
             'use_twist_stamped': use_twist_stamped,
             'save_map': save_map,
-            'use_odom': use_odom
+            'use_odom': use_odom,
+            'use_fake_hardware': use_fake_hardware,
 
         }]
 
@@ -196,6 +204,7 @@ def generate_launch_description():
         use_odom_arg,
         is_dwa_arg,
         use_twist_stamped_arg,
+        use_fake_hardware_arg,
         
         Node(
             package='stage_ros2',
@@ -204,6 +213,8 @@ def generate_launch_description():
             parameters=[{'one_tf_tree': one_tf_tree,
                         'enforce_prefixes': enforce_prefixes,
                         'use_static_transformations': use_static_transformations,
+                        'use_stamped_velocity': use_twist_stamped,
+                        'use_fake_hardware': use_fake_hardware,
                 "world_file": [LaunchConfiguration('world_file')]}],
             condition=IfCondition(is_sim)
         ),

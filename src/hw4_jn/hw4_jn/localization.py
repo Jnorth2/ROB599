@@ -82,6 +82,7 @@ class Localization(Node):
         self.actual_loc = TransformStamped()
         self.move_thresh = 0.003
         self.rot_thresh = 0.01
+        self.sub_sample = 15
 
         self.error = []
         self.time_steps = []
@@ -234,8 +235,8 @@ class Localization(Node):
     def sensor_update(self, x_coords, y_coords, dist, thetas):
         p_sum = 0
         #choose a subset of laser ranges
-        if len(dist) > 27:
-            step = len(dist) // 27
+        if len(dist) > self.sub_sample:
+            step = len(dist) // self.sub_sample
             dist = dist[::step]
             thetas = thetas[::step]
         # self.get_logger().info(f"Thetas: {thetas}")

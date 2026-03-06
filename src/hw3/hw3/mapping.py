@@ -39,6 +39,9 @@ class Mapping(Node):
         self.declare_parameter('use_odom', False)
         self.use_odom = self.get_parameter('use_odom').value
 
+        self.declare_parameter("use_fake_hardware", True)
+        self.use_fake_hardware = self.get_parameter('use_fake_hardware').value
+
         self.get_logger().info(f"use odom: {self.use_odom}")
         #setup pub, sub
         qos = QoSProfile(depth=10)
@@ -46,13 +49,17 @@ class Mapping(Node):
         
         if self.use_twist_stamped:
             self.cmd_vel_pub = self.create_publisher(TwistStamped, 'cmd_vel', 10)
-            self.laser_sub = self.create_subscription(LaserScan, 'scan', self.laser_cb, qos)
             # self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)
-
 
         else:
             self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+
+        if self.use_fake_hardware:
             self.laser_sub = self.create_subscription(LaserScan, 'base_scan', self.laser_cb, 10)
+        else:
+            self.laser_sub = self.create_subscription(LaserScan, 'scan', self.laser_cb, qos)
+        
+
 
         if self.use_odom:
             self.odom_sub = self.create_subscription(Odometry, 'odom', self.odom_cb, 10)

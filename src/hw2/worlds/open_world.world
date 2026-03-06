@@ -73,5 +73,5 @@ pioneer2dx_with_laser
   # can refer to the robot by this name
   name "robot_0"
   color "red" 
-  pose [ 0 0 0 45 ] 
+  pose [ 0 0 0 0 ] 
 )

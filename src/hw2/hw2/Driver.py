@@ -61,6 +61,9 @@ class Driver(Node):
 
         self.declare_parameter('use_twist_stamped', False)
         self.use_twist_stamped = self.get_parameter('use_twist_stamped').value
+        self.get_logger().info(f"Use twist stamped = {self.use_twist_stamped}")
+        self.declare_parameter('use_fake_hardware', False)
+        self.use_fake_hardware = self.get_parameter('use_fake_hardware').value
 
         if self.use_twist_stamped:
             self.cmd_vel_pub = self.create_publisher(TwistStamped, 'cmd_vel', 10)
@@ -91,7 +94,7 @@ class Driver(Node):
             cancel_callback=self.cancel_callback,
             execute_callback=self.waypoint_dwa_callback
         )
-        if self.use_twist_stamped:
+        if self.use_fake_hardware:
             self.laser_sub = self.create_subscription(LaserScan, 'scan', self.laser_cb, qos)
 
         else:
@@ -214,6 +217,7 @@ class Driver(Node):
     
     def laser_cb(self, scan):
         if self.goal and self.is_dwa:
+            # self.get_logger().info("In loop")
             if self.close_enough():
                 if self.use_twist_stamped:
                     self.cmd_vel_pub.publish(self.zero_twist_stamped())
